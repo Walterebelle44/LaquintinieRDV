@@ -1,18 +1,40 @@
 <script setup lang="ts">
 definePageMeta({ layout: "auth" });
 const router = useRouter();
-const { login } = useAuth();
+const { register, dashboardPath } = useAuth();
 
-const form = ref({ prenom: "", nom: "", email: "", telephone: "", password: "" });
+const form = ref({ prenom: "", nom: "", email: "", telephone: "", password: "", passwordConfirm: "" });
 const loading = ref(false);
+const erreur = ref("");
 
-function submit() {
+async function submit() {
+  erreur.value = "";
+
+  if (form.value.password !== form.value.passwordConfirm) {
+    erreur.value = "Les mots de passe ne correspondent pas.";
+    return;
+  }
+
   loading.value = true;
-  setTimeout(() => {
-    login("client");
+  try {
+    await register({
+      prenom: form.value.prenom,
+      nom: form.value.nom,
+      email: form.value.email,
+      telephone: form.value.telephone,
+      mot_de_passe: form.value.password,
+      mot_de_passe_confirmation: form.value.passwordConfirm,
+    });
+    await router.push(dashboardPath());
+  } catch (e: any) {
+    if (e?.errors) {
+      erreur.value = Object.values(e.errors).flat().join(" ");
+    } else {
+      erreur.value = e?.message || "Impossible de créer le compte.";
+    }
+  } finally {
     loading.value = false;
-    router.push("/espace-client");
-  }, 700);
+  }
 }
 </script>
 
@@ -20,6 +42,11 @@ function submit() {
   <div>
     <h1 class="text-2xl font-bold text-ink-950">Créer votre compte patient</h1>
     <p class="text-ink-500 mt-2 text-sm">Réservez vos rendez-vous en quelques secondes.</p>
+
+    <div v-if="erreur" class="mt-6 p-3.5 rounded-xl bg-clay-soft text-clay text-sm flex items-start gap-2">
+      <Icon name="alert-triangle" class="w-4.5 h-4.5 shrink-0 mt-0.5" />
+      {{ erreur }}
+    </div>
 
     <form @submit.prevent="submit" class="mt-8 space-y-5">
       <div class="grid grid-cols-2 gap-3">
@@ -42,7 +69,11 @@ function submit() {
       </div>
       <div>
         <label class="label">Mot de passe</label>
-        <input v-model="form.password" type="password" required class="input" placeholder="8 caractères minimum" />
+        <input v-model="form.password" type="password" required minlength="8" class="input" placeholder="8 caractères minimum" />
+      </div>
+      <div>
+        <label class="label">Confirmer le mot de passe</label>
+        <input v-model="form.passwordConfirm" type="password" required minlength="8" class="input" placeholder="8 caractères minimum" />
       </div>
       <label class="flex items-start gap-2.5 text-sm text-ink-600">
         <input type="checkbox" required class="mt-0.5 rounded border-ink-300 text-azure-600 focus:ring-azure-200" />

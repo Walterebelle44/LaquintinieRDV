@@ -1,18 +1,20 @@
 <script setup lang="ts">
+import { useApi } from '~/composables/useApi';
+import { mapMedecin, mapSpecialite } from '~/composables/useMappers';
+
 const route = useRoute();
 const router = useRouter();
-const { isLoggedIn } = useAuth();
+const { isLoggedIn, role } = useAuth();
+const api = useApi();
 
-const medecins = useMedecins();
-const specialites = useSpecialites();
+const { data: medecinRes } = await useAsyncData(`medecin-${route.params.id}`, () =>
+  api.get(`/medecins/${route.params.id}`)
+);
 
-const medecin = computed(() => {
-  return medecins.find((m) => m.id === route.params.id) || medecins[0] || null;
-});
-
+const medecin = computed(() => mapMedecin(medecinRes.value?.data));
 const specialite = computed(() => {
-  const specId = medecin.value?.specialiteId ?? null;
-  return specId ? specialites.find((s) => s.id === specId) : null;
+  const s = medecinRes.value?.data?.specialites?.[0];
+  return s ? mapSpecialite(s) : null;
 });
 
 // --- Booking flow state ---
@@ -21,10 +23,14 @@ const selectedDay = ref<number | null>(null);
 const selectedSlot = ref<string | null>(null);
 const motif = ref("");
 const booked = ref(false);
-const ticketNumber = `LQT-2026-${Math.floor(10000 + Math.random() * 89999)}`;
+const erreur = ref("");
+const loadingCreneaux = ref(false);
+const loadingBooking = ref(false);
+const creneaux = ref<{ heure: string; disponible: boolean }[]>([]);
+const resultatRdv = ref<any>(null);
 
 const days = computed(() => {
-  const today = new Date(2026, 7, 6); // 6 août 2026 (cohérent avec la date système)
+  const today = new Date();
   const list = [];
   for (let i = 0; i < 7; i++) {
     const d = new Date(today);
@@ -36,57 +42,98 @@ const days = computed(() => {
       label: jourAbrevCap,
       date: d.getDate(),
       mois: d.toLocaleDateString("fr-FR", { month: "short" }),
-      dispo: medecin.value?.joursDispo.includes(jourAbrevCap.slice(0, 3)) ?? false,
+      iso: d.toISOString().slice(0, 10),
       full: d,
     });
   }
   return list;
 });
 
-const slots = ["08:00", "08:30", "09:00", "09:30", "10:30", "11:00", "14:00", "14:30", "15:00", "15:30", "16:30", "17:00"];
-const bookedSlots = ["09:00", "14:30", "16:30"]; // simulate taken slots
-
-function selectDay(i: number) {
+async function selectDay(i: number) {
   selectedDay.value = i;
   selectedSlot.value = null;
+  erreur.value = "";
+  loadingCreneaux.value = true;
+  try {
+    const day = days.value[i];
+    if (!day) {
+      throw new Error("Date invalide.");
+    }
+    const res = await api.get(`/medecins/${route.params.id}/creneaux`, {
+      query: { date: day.iso },
+    });
+    creneaux.value = res.data || [];
+  } catch (e: any) {
+    creneaux.value = [];
+    erreur.value = e?.message || "Impossible de charger les créneaux.";
+  } finally {
+    loadingCreneaux.value = false;
+  }
 }
+
 function goToStep(s: number) {
-  if (!isLoggedIn.value && s > 0) {
+  if (!isLoggedIn.value) {
     router.push({ path: "/connexion", query: { redirect: route.fullPath } });
     return;
   }
   step.value = s;
 }
-function confirmBooking() {
+
+async function confirmBooking() {
   if (!isLoggedIn.value) {
     router.push({ path: "/connexion", query: { redirect: route.fullPath } });
     return;
   }
-  booked.value = true;
-  step.value = 4;
+  if (role.value !== "patient") {
+    erreur.value = "Seul un compte patient peut prendre rendez-vous.";
+    return;
+  }
+
+  const selectedDayIndex = selectedDay.value;
+  const day = typeof selectedDayIndex === "number" ? days.value[selectedDayIndex] : undefined;
+  if (!day) {
+    erreur.value = "Sélectionnez une date valide.";
+    return;
+  }
+
+  erreur.value = "";
+  loadingBooking.value = true;
+  try {
+    const res = await api.post("/patient/rendez-vous", {
+      medecin_id: Number(route.params.id),
+      date: day.iso,
+      heure_debut: selectedSlot.value,
+      motif: motif.value,
+    });
+    resultatRdv.value = res.data;
+    booked.value = true;
+    step.value = 4;
+  } catch (e: any) {
+    erreur.value = e?.message || "Impossible de confirmer le rendez-vous. Merci de réessayer.";
+  } finally {
+    loadingBooking.value = false;
+  }
 }
 
 const selectedDayLabel = computed(() => {
   if (selectedDay.value === null) return "";
   const d = days.value[selectedDay.value];
-  if (!d) return "";
-  return `${d.label} ${d.date} ${d.mois}`;
+  return d ? `${d.label} ${d.date} ${d.mois}` : "";
 });
 </script>
 
 <template>
-  <div class="bg-ink-50/40 min-h-screen pb-20">
+  <div class="bg-ink-50/40 min-h-screen pb-20" v-if="medecinRes?.data">
     <!-- Breadcrumb -->
     <div class="section pt-8 pb-4">
       <div class="flex items-center gap-2 text-sm text-ink-500">
         <NuxtLink to="/medecins" class="hover:text-azure-600">Médecins</NuxtLink>
         <Icon name="chevron-right" class="w-3.5 h-3.5" />
-        <span v-if="medecin" class="text-ink-800 font-medium">Dr {{ medecin.prenom }} {{ medecin.nom }}</span>
-        <span v-else class="text-ink-800 font-medium">Dr —</span>
+        <span class="text-ink-800 font-medium">Dr {{ medecin.prenom }} {{ medecin.nom }}</span>
       </div>
     </div>
 
-    <div class="section grid lg:grid-cols-[1fr_400px] gap-10 items-start" v-if="medecin">
+    <div class="section grid lg:grid-cols-[1fr_400px] gap-10 items-start">
       <!-- Colonne profil -->
       <div class="space-y-6">
         <div class="card p-6 sm:p-8">
@@ -101,12 +148,11 @@ const selectedDayLabel = computed(() => {
                   </span>
                   <h1 class="text-2xl font-bold text-ink-950">Dr {{ medecin.prenom }} {{ medecin.nom }}</h1>
                   <p class="text-ink-500 mt-1 flex items-center gap-1.5 text-sm">
-                    <Icon name="map-pin" class="w-4 h-4" /> Hôpital Laquintinie — Bâtiment B
+                    <Icon name="map-pin" class="w-4 h-4" /> Hôpital Laquintinie {{ medecin.salle ? `— ${medecin.salle}` : '' }}
                   </p>
                 </div>
               </div>
               <div class="flex flex-wrap items-center gap-5 mt-4 text-sm">
-                <span class="flex items-center gap-1.5"><Icon name="star" class="w-4 h-4 text-amber-400" /><b class="text-ink-800">{{ medecin.note }}</b><span class="text-ink-400">({{ medecin.avis }} avis)</span></span>
                 <span class="flex items-center gap-1.5 text-ink-600"><Icon name="activity" class="w-4 h-4 text-azure-600" />{{ medecin.experience }} ans d'expérience</span>
                 <span class="flex items-center gap-1.5 text-ink-600"><Icon name="trending-up" class="w-4 h-4 text-azure-600" />{{ medecin.tarif.toLocaleString() }} FCFA / consultation</span>
               </div>
@@ -114,20 +160,6 @@ const selectedDayLabel = computed(() => {
           </div>
 
           <p class="text-ink-600 leading-relaxed mt-6 pt-6 border-t border-ink-100">{{ medecin.bio }}</p>
-        </div>
-
-        <div class="card p-6 sm:p-8">
-          <h2 class="font-display font-semibold text-ink-900 mb-4">Jours de consultation</h2>
-          <div class="flex flex-wrap gap-2">
-            <span
-              v-for="j in ['Lun','Mar','Mer','Jeu','Ven','Sam']"
-              :key="j"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium"
-              :class="medecin.joursDispo.includes(j) ? 'bg-pulse-soft text-emerald-700' : 'bg-ink-50 text-ink-300 line-through'"
-            >
-              {{ j }}
-            </span>
-          </div>
         </div>
 
         <div class="card p-6 sm:p-8 bg-ink-950 text-white border-none">
@@ -143,6 +175,11 @@ const selectedDayLabel = computed(() => {
 
       <!-- Colonne réservation (sticky) -->
       <div class="card p-6 sm:p-7 lg:sticky lg:top-28">
+        <div v-if="erreur" class="mb-5 p-3.5 rounded-xl bg-clay-soft text-clay text-sm flex items-start gap-2">
+          <Icon name="alert-triangle" class="w-4.5 h-4.5 shrink-0 mt-0.5" />
+          {{ erreur }}
+        </div>
+
         <template v-if="!booked">
           <div class="flex items-center justify-between mb-6">
             <h2 class="font-display font-bold text-lg text-ink-950">Prendre rendez-vous</h2>
@@ -161,21 +198,14 @@ const selectedDayLabel = computed(() => {
               <button
                 v-for="d in days"
                 :key="d.index"
-                :disabled="!d.dispo"
-                @click="selectDay(d.index)"
+                @click="selectDay(d.index); goToStep(2)"
                 class="flex flex-col items-center justify-center gap-0.5 rounded-xl py-3 border transition-all text-sm"
-                :class="[
-                  !d.dispo ? 'opacity-30 cursor-not-allowed border-ink-100' :
-                  selectedDay === d.index ? 'bg-azure-600 border-azure-600 text-white shadow-soft' : 'border-ink-200 hover:border-azure-300 text-ink-700'
-                ]"
+                :class="selectedDay === d.index ? 'bg-azure-600 border-azure-600 text-white shadow-soft' : 'border-ink-200 hover:border-azure-300 text-ink-700'"
               >
                 <span class="text-[11px] uppercase font-medium opacity-80">{{ d.label }}</span>
                 <span class="font-display font-bold text-base">{{ d.date }}</span>
               </button>
             </div>
-            <button class="btn-primary w-full" :disabled="selectedDay === null" @click="goToStep(2)">
-              Continuer <Icon name="arrow-right" class="w-4 h-4" />
-            </button>
           </div>
 
           <!-- Step 2: Heure -->
@@ -184,19 +214,27 @@ const selectedDayLabel = computed(() => {
               <Icon name="chevron-left" class="w-4 h-4" /> {{ selectedDayLabel }}
             </button>
             <p class="label mb-3">Choisissez un créneau</p>
-            <div class="grid grid-cols-3 gap-2 mb-6">
+
+            <div v-if="loadingCreneaux" class="py-10 text-center text-sm text-ink-400">
+              <span class="inline-block w-5 h-5 border-2 border-ink-200 border-t-azure-600 rounded-full animate-spin mb-2" />
+              <p>Chargement des créneaux…</p>
+            </div>
+            <div v-else-if="!creneaux.length" class="py-10 text-center text-sm text-ink-400">
+              Aucun créneau disponible ce jour. Choisissez une autre date.
+            </div>
+            <div v-else class="grid grid-cols-3 gap-2 mb-6">
               <button
-                v-for="s in slots"
-                :key="s"
-                :disabled="bookedSlots.includes(s)"
-                @click="selectedSlot = s"
+                v-for="c in creneaux"
+                :key="c.heure"
+                :disabled="!c.disponible"
+                @click="selectedSlot = c.heure"
                 class="rounded-xl py-2.5 text-sm font-medium border transition-all"
                 :class="[
-                  bookedSlots.includes(s) ? 'opacity-30 cursor-not-allowed border-ink-100 line-through' :
-                  selectedSlot === s ? 'bg-azure-600 border-azure-600 text-white shadow-soft' : 'border-ink-200 hover:border-azure-300 text-ink-700'
+                  !c.disponible ? 'opacity-30 cursor-not-allowed border-ink-100 line-through' :
+                  selectedSlot === c.heure ? 'bg-azure-600 border-azure-600 text-white shadow-soft' : 'border-ink-200 hover:border-azure-300 text-ink-700'
                 ]"
               >
-                {{ s }}
+                {{ c.heure }}
               </button>
             </div>
             <button class="btn-primary w-full" :disabled="!selectedSlot" @click="goToStep(3)">
@@ -222,11 +260,12 @@ const selectedDayLabel = computed(() => {
             <button v-if="!isLoggedIn" class="btn-primary w-full" @click="confirmBooking">
               <Icon name="lock" class="w-4 h-4" /> Se connecter pour confirmer
             </button>
-            <button v-else class="btn-primary w-full" @click="confirmBooking">
-              Confirmer le rendez-vous <Icon name="check" class="w-4 h-4" />
+            <button v-else class="btn-primary w-full" :disabled="loadingBooking" @click="confirmBooking">
+              <span v-if="loadingBooking" class="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+              <template v-else>Confirmer le rendez-vous <Icon name="check" class="w-4 h-4" /></template>
             </button>
             <p v-if="!isLoggedIn" class="text-xs text-ink-400 text-center mt-3">
-              Un compte est nécessaire pour réserver. Votre créneau est conservé pendant 5 minutes.
+              Un compte est nécessaire pour réserver.
             </p>
           </div>
         </template>
@@ -244,19 +283,22 @@ const selectedDayLabel = computed(() => {
             </p>
 
             <div class="mt-6 bg-ink-50 rounded-xl p-5 text-left space-y-2.5 text-sm">
-              <div class="flex justify-between"><span class="text-ink-500">N° de ticket</span><span class="font-mono font-semibold text-azure-700">{{ ticketNumber }}</span></div>
+              <div class="flex justify-between"><span class="text-ink-500">Référence</span><span class="font-mono font-semibold text-azure-700">{{ resultatRdv?.uuid?.slice(0, 8) }}</span></div>
               <div class="flex justify-between"><span class="text-ink-500">Date</span><span class="font-medium text-ink-800">{{ selectedDayLabel }}</span></div>
               <div class="flex justify-between"><span class="text-ink-500">Heure</span><span class="font-medium text-ink-800">{{ selectedSlot }}</span></div>
-              <div class="flex justify-between"><span class="text-ink-500">Statut</span><span class="badge badge-pending">En attente</span></div>
+              <div class="flex justify-between"><span class="text-ink-500">Statut</span><span class="badge badge-pending">En attente de confirmation</span></div>
             </div>
 
             <div class="flex gap-3 mt-6">
-              <button class="btn-secondary flex-1"><Icon name="printer" class="w-4 h-4" />Imprimer</button>
               <NuxtLink to="/espace-client/rendez-vous" class="btn-primary flex-1">Voir mes RDV</NuxtLink>
             </div>
           </div>
         </template>
       </div>
     </div>
+  </div>
+
+  <div v-else class="section py-24 text-center text-ink-400">
+    Chargement du profil médecin…
   </div>
 </template>

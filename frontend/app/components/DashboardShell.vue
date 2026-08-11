@@ -1,6 +1,6 @@
 <script setup lang="ts">
 const props = defineProps<{
-  role: "client" | "medecin" | "admin";
+  role: "client" | "patient" | "medecin" | "admin";
   nav: { label: string; to: string; icon: string }[];
   title: string;
 }>();
@@ -9,11 +9,11 @@ const { name, logout } = useAuth();
 const router = useRouter();
 const mobileOpen = ref(false);
 
-const roleLabel = { client: "Espace Patient", medecin: "Espace Médecin", admin: "Administration" }[props.role];
-const roleBadge = { client: "user", medecin: "stethoscope", admin: "shield" }[props.role];
+const roleLabel = { client: "Espace Patient", patient: "Espace Patient", medecin: "Espace Médecin", admin: "Administration" }[props.role];
+const roleBadge = { client: "user", patient: "user", medecin: "stethoscope", admin: "shield" }[props.role];
 
-function doLogout() {
-  logout();
+async function doLogout() {
+  await logout();
   router.push("/");
 }
 </script>

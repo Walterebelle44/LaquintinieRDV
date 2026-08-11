@@ -10,6 +10,12 @@ export default defineNuxtConfig({
       tailwindcss(),
     ],
   },
+  runtimeConfig: {
+    public: {
+      // URL de l'API Laravel. Redéfinissable via la variable d'env NUXT_PUBLIC_API_BASE
+      apiBase: process.env.NUXT_PUBLIC_API_BASE || 'http://localhost:8000/api',
+    },
+  },
   app: {
     head: {
       title: "MediRDV Laquintinie — Prise de rendez-vous en ligne",

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useApi } from '~/composables/useApi';
+
+definePageMeta({ layout: "blank" as any, roles: ["admin"] });
 const nav = [
   { label: "Vue d'ensemble", to: "/espace-admin", icon: "activity" },
   { label: "Utilisateurs", to: "/espace-admin/utilisateurs", icon: "users" },
@@ -8,25 +11,46 @@ const nav = [
   { label: "Journal des logs", to: "/espace-admin/logs", icon: "file-text" },
 ];
 
-const specialites = ref(useSpecialites());
+const api = useApi();
+const { data: specialitesRes, refresh, pending } = await useAsyncData("admin-specialites", () =>
+  api.get("/specialites").catch(() => ({ data: [] }))
+);
+
+const specialites = computed(() => specialitesRes.value?.data || []);
+
 const showModal = ref(false);
+const creating = ref(false);
+const erreurModal = ref("");
+const actionEnCours = ref<number | null>(null);
 const newSpec = ref({ nom: "", description: "", icone: "heart" });
 const iconOptions = ["heart", "stethoscope", "tooth", "baby", "flower", "sparkle", "eye", "bone"];
 
-function addSpecialite() {
-  if (!newSpec.value.nom.trim()) return;
-  specialites.value.push({
-    id: newSpec.value.nom.toLowerCase().replace(/\s+/g, "-"),
-    nom: newSpec.value.nom,
-    description: newSpec.value.description || "Nouvelle spécialité",
-    icone: newSpec.value.icone,
-    nbMedecins: 0,
-  });
-  newSpec.value = { nom: "", description: "", icone: "heart" };
-  showModal.value = false;
+async function addSpecialite() {
+  erreurModal.value = "";
+  creating.value = true;
+  try {
+    await api.post("/admin/specialites", newSpec.value);
+    newSpec.value = { nom: "", description: "", icone: "heart" };
+    showModal.value = false;
+    await refresh();
+  } catch (e: any) {
+    erreurModal.value = e?.message || "Impossible d'ajouter cette spécialité.";
+  } finally {
+    creating.value = false;
+  }
 }
-function remove(id: string) {
-  specialites.value = specialites.value.filter((s) => s.id !== id);
+
+async function remove(s: any) {
+  if (!confirm(`Supprimer la spécialité « ${s.nom} » ?`)) return;
+  actionEnCours.value = s.id;
+  try {
+    await api.del(`/admin/specialites/${s.id}`);
+    await refresh();
+  } catch (e: any) {
+    alert(e?.message || "Suppression impossible : des médecins sont encore rattachés.");
+  } finally {
+    actionEnCours.value = null;
+  }
 }
 </script>
 
@@ -37,21 +61,21 @@ function remove(id: string) {
       <button class="btn-primary !text-sm" @click="showModal = true"><Icon name="plus" class="w-4 h-4" />Ajouter un type</button>
     </div>
 
-    <div class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
+    <div v-if="pending" class="card p-16 text-center text-sm text-ink-400">Chargement…</div>
+
+    <div v-else class="grid sm:grid-cols-2 lg:grid-cols-3 gap-5">
       <div v-for="s in specialites" :key="s.id" class="card p-5 flex items-start gap-4">
-        <span class="w-11 h-11 rounded-xl bg-azure-50 text-azure-600 flex items-center justify-center shrink-0"><Icon :name="s.icone" class="w-5 h-5" /></span>
+        <span class="w-11 h-11 rounded-xl bg-azure-50 text-azure-600 flex items-center justify-center shrink-0"><Icon :name="s.icone || 'heart'" class="w-5 h-5" /></span>
         <div class="flex-1 min-w-0">
           <p class="font-display font-semibold text-ink-950">{{ s.nom }}</p>
           <p class="text-xs text-ink-500 mt-0.5">{{ s.description }}</p>
-          <p class="text-xs text-ink-400 mt-2">{{ s.nbMedecins }} médecin(s) rattaché(s)</p>
+          <p class="text-xs text-ink-400 mt-2">{{ s.medecins_count ?? 0 }} médecin(s) rattaché(s)</p>
         </div>
-        <div class="flex flex-col gap-1.5 shrink-0">
-          <button class="btn-ghost !p-2"><Icon name="edit" class="w-4 h-4" /></button>
-          <button @click="remove(s.id)" class="btn-ghost !p-2 hover:!text-clay" :disabled="s.nbMedecins > 0" :title="s.nbMedecins > 0 ? 'Des médecins y sont rattachés' : 'Supprimer'">
-            <Icon name="x-circle" class="w-4 h-4" />
-          </button>
-        </div>
+        <button :disabled="actionEnCours === s.id" @click="remove(s)" class="btn-ghost !p-2 hover:!text-clay shrink-0" title="Supprimer">
+          <Icon name="x-circle" class="w-4 h-4" />
+        </button>
       </div>
+      <div v-if="!specialites.length" class="col-span-full card p-16 text-center text-sm text-ink-500">Aucune spécialité configurée.</div>
     </div>
 
     <div v-if="showModal" class="fixed inset-0 bg-ink-950/50 backdrop-blur-sm z-50 flex items-center justify-center p-4" @click.self="showModal = false">
@@ -60,6 +84,7 @@ function remove(id: string) {
           <h2 class="font-display font-semibold text-lg text-ink-950">Nouvelle spécialité</h2>
           <button @click="showModal = false" class="text-ink-400 hover:text-ink-700"><Icon name="x" class="w-5 h-5" /></button>
         </div>
+        <div v-if="erreurModal" class="mb-4 p-3 rounded-xl bg-clay-soft text-clay text-sm">{{ erreurModal }}</div>
         <div class="space-y-4">
           <div><label class="label">Nom de la spécialité</label><input v-model="newSpec.nom" class="input" placeholder="Ex. Endocrinologie" /></div>
           <div><label class="label">Description courte</label><input v-model="newSpec.description" class="input" placeholder="Ex. Hormones & métabolisme" /></div>
@@ -77,7 +102,9 @@ function remove(id: string) {
               </button>
             </div>
           </div>
-          <button class="btn-primary w-full" @click="addSpecialite">Ajouter la spécialité</button>
+          <button class="btn-primary w-full" :disabled="creating" @click="addSpecialite">
+            {{ creating ? "Ajout…" : "Ajouter la spécialité" }}
+          </button>
         </div>
       </div>
     </div>

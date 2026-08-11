@@ -1,5 +1,15 @@
 <script setup lang="ts">
-const specialites = useSpecialites().slice(0, 6);
+import { useApi } from '~/composables/useApi';
+
+const api = useApi();
+const { data: specialitesRes } = await useAsyncData("footer-specialites", () =>
+  api.get("/specialites").catch(() => ({ data: [] }))
+);
+const mapSpecialite = (specialite: any) => ({
+  id: specialite.id,
+  nom: specialite.nom,
+});
+const specialites = computed(() => (specialitesRes.value?.data || []).slice(0, 6).map(mapSpecialite));
 </script>
 
 <template>

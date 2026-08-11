@@ -1,8 +1,20 @@
 <script setup lang="ts">
-const specialites = useSpecialites();
-const medecins = useMedecins().slice(0, 6);
+import { useApi } from '~/composables/useApi';
+import { mapMedecin, mapSpecialite } from '~/composables/useMappers';
+
+const api = useApi();
 const router = useRouter();
 const query = ref("");
+
+const { data: specialitesRes } = await useAsyncData("home-specialites", () =>
+  api.get("/specialites").catch(() => ({ data: [] }))
+);
+const { data: medecinsRes } = await useAsyncData("home-medecins", () =>
+  api.get("/medecins?per_page=6").catch(() => ({ data: [] }))
+);
+
+const specialites = computed(() => (specialitesRes.value?.data || []).map(mapSpecialite));
+const medecins = computed(() => (medecinsRes.value?.data || []).map(mapMedecin));
 
 function onSearch() {
   router.push({ path: "/medecins", query: query.value ? { q: query.value } : {} });

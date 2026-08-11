@@ -3,28 +3,26 @@ definePageMeta({ layout: "auth" });
 
 const route = useRoute();
 const router = useRouter();
-const { login } = useAuth();
+const { login, dashboardPath } = useAuth();
 
 const email = ref("");
 const password = ref("");
 const loading = ref(false);
 const showPassword = ref(false);
+const erreur = ref("");
 
-function submit() {
+async function submit() {
+  erreur.value = "";
   loading.value = true;
-  setTimeout(() => {
-    login("client");
+  try {
+    await login(email.value, password.value);
+    const redirect = (route.query.redirect as string) || dashboardPath();
+    await router.push(redirect);
+  } catch (e: any) {
+    erreur.value = e?.message || "Impossible de se connecter. Vérifiez vos identifiants.";
+  } finally {
     loading.value = false;
-    const redirect = (route.query.redirect as string) || "/espace-client";
-    router.push(redirect);
-  }, 700);
-}
-
-function quickAccess(role: "client" | "medecin" | "admin") {
-  login(role);
-  if (role === "client") router.push("/espace-client");
-  if (role === "medecin") router.push("/espace-medecin");
-  if (role === "admin") router.push("/espace-admin");
+  }
 }
 </script>
 
@@ -32,6 +30,11 @@ function quickAccess(role: "client" | "medecin" | "admin") {
   <div>
     <h1 class="text-2xl font-bold text-ink-950">Content de vous revoir</h1>
     <p class="text-ink-500 mt-2 text-sm">Connectez-vous pour gérer vos rendez-vous.</p>
+
+    <div v-if="erreur" class="mt-6 p-3.5 rounded-xl bg-clay-soft text-clay text-sm flex items-start gap-2">
+      <Icon name="alert-triangle" class="w-4.5 h-4.5 shrink-0 mt-0.5" />
+      {{ erreur }}
+    </div>
 
     <form @submit.prevent="submit" class="mt-8 space-y-5">
       <div>
@@ -60,25 +63,14 @@ function quickAccess(role: "client" | "medecin" | "admin") {
       </button>
     </form>
 
-    <div class="my-7 flex items-center gap-3 text-xs text-ink-400">
-      <div class="h-px bg-ink-200 flex-1" /> aperçu rapide (démo) <div class="h-px bg-ink-200 flex-1" />
-    </div>
-
-    <div class="grid grid-cols-3 gap-2">
-      <button @click="quickAccess('client')" class="btn-secondary !px-2 flex-col !py-3 text-xs gap-1.5">
-        <Icon name="user" class="w-4 h-4" /> Patient
-      </button>
-      <button @click="quickAccess('medecin')" class="btn-secondary !px-2 flex-col !py-3 text-xs gap-1.5">
-        <Icon name="stethoscope" class="w-4 h-4" /> Médecin
-      </button>
-      <button @click="quickAccess('admin')" class="btn-secondary !px-2 flex-col !py-3 text-xs gap-1.5">
-        <Icon name="shield" class="w-4 h-4" /> Admin
-      </button>
-    </div>
-
     <p class="text-center text-sm text-ink-500 mt-8">
       Pas encore de compte ?
       <NuxtLink to="/inscription" class="text-azure-600 font-semibold hover:text-azure-700">Créer un compte</NuxtLink>
+    </p>
+
+    <p class="text-center text-xs text-ink-400 mt-6">
+      Comptes de démonstration (seed) : admin@laquintinie.cm · j.ekwalla@laquintinie.cm ·
+      walter.d@gmail.com — mot de passe <span class="font-mono">password</span>
     </p>
   </div>
 </template>

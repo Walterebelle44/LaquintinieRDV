@@ -1,7 +1,19 @@
 <script setup lang="ts">
+import { useApi } from '~/composables/useApi';
+import { mapMedecin, mapSpecialite } from '~/composables/useMappers';
+
 const route = useRoute();
-const specialites = useSpecialites();
-const allMedecins = useMedecins();
+const api = useApi();
+
+const { data: specialitesRes } = await useAsyncData("liste-specialites", () =>
+  api.get("/specialites").catch(() => ({ data: [] }))
+);
+const { data: medecinsRes } = await useAsyncData("liste-medecins", () =>
+  api.get("/medecins?per_page=100").catch(() => ({ data: [] }))
+);
+
+const specialites = computed(() => (specialitesRes.value?.data || []).map(mapSpecialite));
+const allMedecins = computed(() => (medecinsRes.value?.data || []).map(mapMedecin));
 
 const activeSpecialite = ref((route.query.specialite as string) || "all");
 const search = ref((route.query.q as string) || "");
@@ -10,14 +22,14 @@ const sort = ref("dispo");
 watch(() => route.query.specialite, (v) => { if (v) activeSpecialite.value = v as string; });
 
 const filtered = computed(() => {
-  let list = allMedecins.filter((m) => m.statut === "actif");
-  if (activeSpecialite.value !== "all") list = list.filter((m) => m.specialiteId === activeSpecialite.value);
+  let list = allMedecins.value.filter((m: { statut: string; }) => m.statut === "actif");
+  if (activeSpecialite.value !== "all") list = list.filter((m: { specialiteId: string; }) => m.specialiteId === activeSpecialite.value);
   if (search.value.trim()) {
     const q = search.value.toLowerCase();
     list = list.filter(
-      (m) =>
+      (m: { prenom: any; nom: any; specialiteId: any; }) =>
         `${m.prenom} ${m.nom}`.toLowerCase().includes(q) ||
-        specialites.find((s) => s.id === m.specialiteId)?.nom.toLowerCase().includes(q)
+        specialites.value.find((s: { id: any; }) => s.id === m.specialiteId)?.nom.toLowerCase().includes(q)
     );
   }
   if (sort.value === "note") list = [...list].sort((a, b) => b.note - a.note);

@@ -1,4 +1,7 @@
 <script setup lang="ts">
+import { useApi } from '~/composables/useApi';
+
+definePageMeta({ layout: "blank" as any, roles: ["medecin"] });
 const nav = [
   { label: "Vue d'ensemble", to: "/espace-medecin", icon: "activity" },
   { label: "Demandes de RDV", to: "/espace-medecin/demandes", icon: "bell" },
@@ -6,87 +9,118 @@ const nav = [
   { label: "Mon profil", to: "/espace-medecin/profil", icon: "user" },
 ];
 
-const jours = ["Lundi", "Mardi", "Mercredi", "Jeudi", "Vendredi", "Samedi"];
-const heures = ["08:00", "09:00", "10:00", "11:00", "14:00", "15:00", "16:00", "17:00"];
+const api = useApi();
+const jours = [
+  { label: "Lundi", valeur: 1 }, { label: "Mardi", valeur: 2 }, { label: "Mercredi", valeur: 3 },
+  { label: "Jeudi", valeur: 4 }, { label: "Vendredi", valeur: 5 }, { label: "Samedi", valeur: 6 },
+];
 
-// simple grid occupancy simulation
-const occ: Record<string, "libre" | "occupe" | "bloque"> = {
-  "Lundi-09:00": "occupe", "Lundi-11:00": "occupe", "Lundi-15:00": "occupe",
-  "Mardi-08:00": "occupe", "Mardi-10:00": "bloque", "Mardi-16:00": "occupe",
-  "Mercredi-09:00": "occupe", "Mercredi-14:00": "occupe",
-  "Jeudi-11:00": "occupe", "Jeudi-15:00": "bloque", "Jeudi-16:00": "occupe",
-  "Vendredi-08:00": "occupe", "Vendredi-09:00": "occupe", "Vendredi-17:00": "occupe",
-};
-function status(j: string, h: string) { return occ[`${j}-${h}`] || "libre"; }
+const { data: dispoRes, refresh: refreshDispo } = await useAsyncData("mes-disponibilites", () =>
+  api.get("/medecin/disponibilites").catch(() => ({ data: [] }))
+);
 
-const disponibilites = ref([
-  { jour: "Lundi", debut: "08:00", fin: "15:00" },
-  { jour: "Mardi", debut: "08:00", fin: "17:30" },
-  { jour: "Jeudi", debut: "08:00", fin: "17:30" },
-  { jour: "Vendredi", debut: "08:00", fin: "13:00" },
-]);
+const grille = ref(
+  jours.map((j) => {
+    const existant = (dispoRes.value?.data || []).find((d: any) => d.jour_semaine === j.valeur);
+    return {
+      jour: j.label,
+      valeur: j.valeur,
+      actif: !!existant,
+      debut: existant?.heure_debut?.slice(0, 5) || "08:00",
+      fin: existant?.heure_fin?.slice(0, 5) || "15:00",
+    };
+  })
+);
+
+const savingDispo = ref(false);
+const dispoMessage = ref("");
+
+async function enregistrerDisponibilites() {
+  savingDispo.value = true;
+  dispoMessage.value = "";
+  try {
+    const creneaux = grille.value
+      .filter((g) => g.actif)
+      .map((g) => ({ jour_semaine: g.valeur, heure_debut: g.debut, heure_fin: g.fin }));
+    await api.put("/medecin/disponibilites", { creneaux });
+    await refreshDispo();
+    dispoMessage.value = "Disponibilités mises à jour.";
+  } catch (e: any) {
+    dispoMessage.value = e?.message || "Impossible d'enregistrer.";
+  } finally {
+    savingDispo.value = false;
+  }
+}
+
+// Blocage ponctuel
+const blocage = ref({ date: "", heureDebut: "", heureFin: "", motif: "" });
+const blocageSaving = ref(false);
+const blocageMessage = ref("");
+
+async function bloquerCreneau() {
+  if (!blocage.value.date || !blocage.value.heureDebut || !blocage.value.heureFin) return;
+  blocageSaving.value = true;
+  blocageMessage.value = "";
+  try {
+    await api.post("/medecin/indisponibilites", {
+      debut: `${blocage.value.date} ${blocage.value.heureDebut}:00`,
+      fin: `${blocage.value.date} ${blocage.value.heureFin}:00`,
+      motif: blocage.value.motif || null,
+    });
+    blocageMessage.value = "Créneau bloqué avec succès.";
+    blocage.value = { date: "", heureDebut: "", heureFin: "", motif: "" };
+  } catch (e: any) {
+    blocageMessage.value = e?.message || "Impossible de bloquer ce créneau.";
+  } finally {
+    blocageSaving.value = false;
+  }
+}
 </script>
 
 <template>
   <DashboardShell role="medecin" :nav="nav" title="Mon planning">
-    <div class="grid lg:grid-cols-[1fr_320px] gap-6">
-      <div class="card p-6 overflow-x-auto">
-        <div class="flex items-center justify-between mb-5">
-          <h2 class="font-display font-semibold text-ink-900">Semaine du 04 au 09 août 2026</h2>
-          <div class="flex items-center gap-4 text-xs text-ink-500">
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-azure-500"></span>Occupé</span>
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-clay/70"></span>Bloqué</span>
-            <span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-ink-100"></span>Libre</span>
+    <div class="grid lg:grid-cols-[1fr_360px] gap-6">
+      <div class="card p-6 sm:p-7">
+        <h2 class="font-display font-semibold text-ink-900 mb-1">Disponibilités récurrentes</h2>
+        <p class="text-sm text-ink-500 mb-5">Cochez les jours travaillés et définissez vos horaires de consultation.</p>
+
+        <div class="space-y-2.5">
+          <div v-for="g in grille" :key="g.valeur" class="flex flex-col sm:flex-row sm:items-center gap-3 p-3.5 rounded-xl border" :class="g.actif ? 'border-azure-200 bg-azure-50/40' : 'border-ink-100'">
+            <label class="flex items-center gap-2.5 w-32 shrink-0 cursor-pointer">
+              <input type="checkbox" v-model="g.actif" class="rounded border-ink-300 text-azure-600 focus:ring-azure-200" />
+              <span class="text-sm font-medium text-ink-800">{{ g.jour }}</span>
+            </label>
+            <div class="flex items-center gap-2" v-if="g.actif">
+              <input type="time" v-model="g.debut" class="input !py-1.5 !w-28 text-sm" />
+              <span class="text-ink-400 text-sm">à</span>
+              <input type="time" v-model="g.fin" class="input !py-1.5 !w-28 text-sm" />
+            </div>
           </div>
         </div>
-        <table class="w-full min-w-[560px] border-separate border-spacing-1.5">
-          <thead>
-            <tr>
-              <th class="text-xs text-ink-400 font-medium w-16"></th>
-              <th v-for="j in jours" :key="j" class="text-xs text-ink-500 font-semibold pb-2">{{ j.slice(0,3) }}</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="h in heures" :key="h">
-              <td class="text-xs text-ink-400 font-mono pr-2">{{ h }}</td>
-              <td v-for="j in jours" :key="j+h">
-                <div
-                  class="h-9 rounded-lg"
-                  :class="{
-                    'bg-azure-500': status(j,h) === 'occupe',
-                    'bg-clay/70': status(j,h) === 'bloque',
-                    'bg-ink-100 hover:bg-ink-200 cursor-pointer transition-colors': status(j,h) === 'libre',
-                  }"
-                  :title="status(j,h)"
-                />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+
+        <div class="flex items-center gap-3 mt-5">
+          <button class="btn-primary !text-sm" :disabled="savingDispo" @click="enregistrerDisponibilites">
+            {{ savingDispo ? "Enregistrement…" : "Enregistrer mes disponibilités" }}
+          </button>
+          <span v-if="dispoMessage" class="text-sm text-emerald-600">{{ dispoMessage }}</span>
+        </div>
       </div>
 
       <div class="space-y-6">
         <div class="card p-6">
-          <h2 class="font-display font-semibold text-ink-900 mb-4">Disponibilités récurrentes</h2>
-          <div class="space-y-2.5">
-            <div v-for="d in disponibilites" :key="d.jour" class="flex items-center justify-between p-3 rounded-xl bg-ink-50 text-sm">
-              <span class="font-medium text-ink-800">{{ d.jour }}</span>
-              <span class="text-ink-500 font-mono text-xs">{{ d.debut }} – {{ d.fin }}</span>
-            </div>
-          </div>
-          <button class="btn-secondary w-full mt-4 !text-sm"><Icon name="edit" class="w-4 h-4" />Modifier mes disponibilités</button>
-        </div>
-
-        <div class="card p-6">
           <h2 class="font-display font-semibold text-ink-900 mb-3">Bloquer un créneau</h2>
           <p class="text-sm text-ink-500 mb-4">Urgence ou absence imprévue ? Bloquez rapidement une plage horaire.</p>
           <div class="space-y-3">
-            <input type="date" class="input" />
+            <input v-model="blocage.date" type="date" class="input" />
             <div class="grid grid-cols-2 gap-3">
-              <input type="time" class="input" />
-              <input type="time" class="input" />
+              <input v-model="blocage.heureDebut" type="time" class="input" />
+              <input v-model="blocage.heureFin" type="time" class="input" />
             </div>
-            <button class="btn-primary w-full !text-sm">Bloquer ce créneau</button>
+            <input v-model="blocage.motif" type="text" class="input" placeholder="Motif (optionnel)" />
+            <button class="btn-primary w-full !text-sm" :disabled="blocageSaving" @click="bloquerCreneau">
+              {{ blocageSaving ? "Blocage…" : "Bloquer ce créneau" }}
+            </button>
+            <p v-if="blocageMessage" class="text-sm" :class="blocageMessage.includes('succès') ? 'text-emerald-600' : 'text-clay'">{{ blocageMessage }}</p>
           </div>
         </div>
       </div>

@@ -1,8 +1,5 @@
 <script setup lang="ts">
-import type { Medecin } from "~/composables/useMockData";
-const props = defineProps<{ medecin: Medecin }>();
-const specialites = useSpecialites();
-const specialite = computed(() => specialites.find((s) => s.id === props.medecin.specialiteId));
+const props = defineProps<{ medecin: any }>();
 </script>
 
 <template>
@@ -12,9 +9,9 @@ const specialite = computed(() => specialites.find((s) => s.id === props.medecin
   >
     <div class="relative h-44 overflow-hidden bg-ink-50">
       <img :src="medecin.photo" :alt="`Dr ${medecin.prenom} ${medecin.nom}`" class="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
-      <span class="absolute top-3 left-3 badge bg-white/95 backdrop-blur text-ink-700 shadow-soft">
-        <Icon :name="specialite?.icone || 'heart'" class="w-3.5 h-3.5 text-azure-600" />
-        {{ specialite?.nom }}
+      <span v-if="medecin.specialiteNom" class="absolute top-3 left-3 badge bg-white/95 backdrop-blur text-ink-700 shadow-soft">
+        <Icon name="heart" class="w-3.5 h-3.5 text-azure-600" />
+        {{ medecin.specialiteNom }}
       </span>
     </div>
     <div class="p-5 flex flex-col gap-3 flex-1">
@@ -23,17 +20,13 @@ const specialite = computed(() => specialites.find((s) => s.id === props.medecin
         <p class="text-sm text-ink-500 mt-1 line-clamp-2">{{ medecin.bio }}</p>
       </div>
       <div class="flex items-center gap-1 text-sm">
-        <Icon name="star" class="w-4 h-4 text-amber-400 fill-amber-400" />
-        <span class="font-semibold text-ink-800">{{ medecin.note }}</span>
-        <span class="text-ink-400">({{ medecin.avis }} avis)</span>
-        <span class="text-ink-300 mx-1">·</span>
-        <span class="text-ink-500">{{ medecin.experience }} ans d'exp.</span>
+        <span class="text-ink-500">{{ medecin.experience }} ans d'expérience</span>
       </div>
       <div class="flex items-center justify-between mt-auto pt-3 border-t border-ink-100">
         <div class="text-xs text-ink-500">
           <span class="flex items-center gap-1.5 text-pulse font-medium">
             <span class="w-1.5 h-1.5 rounded-full bg-pulse animate-pulse"></span>
-            {{ medecin.prochaineDispo }}
+            {{ medecin.tarif.toLocaleString() }} FCFA
           </span>
         </div>
         <span class="btn-primary !px-4 !py-2 !text-sm">Réserver</span>
