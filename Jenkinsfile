@@ -15,7 +15,9 @@ pipeline {
 
         stage('Install Backend Deps') {
             steps {
-                bat 'composer install --no-dev --optimize-autoloader'
+                dir('backend') {
+                    bat 'composer install --no-dev --optimize-autoloader'
+                }
             }
         }
 
@@ -29,9 +31,11 @@ pipeline {
 
         stage('Run Tests') {
             steps {
-                bat 'copy .env.testing .env'
-                bat 'php artisan key:generate'
-                bat 'php artisan test'
+                dir('backend') {
+                    bat 'copy .env.testing .env'
+                    bat 'php artisan key:generate'
+                    bat 'php artisan test'
+                }
             }
         }
 
