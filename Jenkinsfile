@@ -15,43 +15,43 @@ pipeline {
 
         stage('Install Backend Deps') {
             steps {
-                sh 'composer install --no-dev --optimize-autoloader'
+                bat 'composer install --no-dev --optimize-autoloader'
             }
         }
 
         stage('Install Frontend Deps (Nuxt)') {
             steps {
                 dir('frontend') {
-                    sh 'npm ci'
+                    bat 'npm ci'
                 }
             }
         }
 
         stage('Run Tests') {
             steps {
-                sh 'cp .env.testing .env'
-                sh 'php artisan key:generate'
-                sh 'php artisan test'
+                bat 'copy .env.testing .env'
+                bat 'php artisan key:generate'
+                bat 'php artisan test'
             }
         }
 
         stage('Build Frontend') {
             steps {
                 dir('frontend') {
-                    sh 'npm run build'
+                    bat 'npm run build'
                 }
             }
         }
 
         // Stage Deploy retiré pour le moment (pas encore de serveur cible).
-        // Quand tu seras prêt : soit un déploiement local (cp/rsync sans ssh
+        // Quand tu seras prêt : soit un déploiement local (copy/robocopy sans ssh
         // si Jenkins tourne sur la même machine que le serveur), soit un
         // déploiement distant en SSH (credential 'deploy-server-key' à créer).
     }
 
     post {
         success {
-            echo '✅ Déploiement réussi !'
+            echo '✅ Build réussi !'
         }
         failure {
             echo '❌ Le pipeline a échoué.'
