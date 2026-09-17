@@ -33,7 +33,6 @@ pipeline {
             steps {
                 dir('backend') {
                     bat 'copy .env.testing .env'
-                    bat 'php artisan key:generate'
                     bat 'php artisan test'
                 }
             }
