@@ -43,30 +43,10 @@ pipeline {
             }
         }
 
-        stage('Deploy') {
-            when { branch 'main' }
-            steps {
-                // Déploiement en HTTPS via rsync/ssh classique (pas de clé Git SSH,
-                // juste l'accès shell au serveur de déploiement avec une credential SSH dédiée au déploiement)
-                sshagent(['deploy-server-key']) {
-                    sh """
-                        rsync -avz --exclude='.git' --exclude='node_modules' \
-                        ./ user@ton-serveur:${DEPLOY_PATH}
-
-                        ssh user@ton-serveur '
-                            cd ${DEPLOY_PATH} &&
-                            composer install --no-dev --optimize-autoloader &&
-                            php artisan migrate --force &&
-                            php artisan config:cache &&
-                            php artisan route:cache &&
-                            php artisan view:cache &&
-                            sudo systemctl reload php8.2-fpm &&
-                            sudo systemctl reload nginx
-                        '
-                    """
-                }
-            }
-        }
+        // Stage Deploy retiré pour le moment (pas encore de serveur cible).
+        // Quand tu seras prêt : soit un déploiement local (cp/rsync sans ssh
+        // si Jenkins tourne sur la même machine que le serveur), soit un
+        // déploiement distant en SSH (credential 'deploy-server-key' à créer).
     }
 
     post {
