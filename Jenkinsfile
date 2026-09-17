@@ -16,7 +16,7 @@ pipeline {
         stage('Install Backend Deps') {
             steps {
                 dir('backend') {
-                    bat 'composer install --no-dev --optimize-autoloader'
+                    bat 'composer install --optimize-autoloader'
                 }
             }
         }
