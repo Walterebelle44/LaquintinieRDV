@@ -9,7 +9,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'https://github.com/Walterebelle44/LaquintinieRDV.git'
+                git branch: 'main', url: 'https://github.com/Walterebelle44/LaquintinieRDV.git', credentialsId: 'eac688b3-3279-4726-a137-7938a9d36603'
             }
         }
 
