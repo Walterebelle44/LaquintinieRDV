@@ -9,7 +9,7 @@ pipeline {
     stages {
         stage('Checkout') {
             steps {
-                git branch: 'main', url: 'git@github.com:tonuser/gamestore-cameroun.git', credentialsId: 'github-ssh-key'
+                git branch: 'main', url: 'https://github.com/Walterebelle44/LaquintinieRDV.git'
             }
         }
 
@@ -46,6 +46,8 @@ pipeline {
         stage('Deploy') {
             when { branch 'main' }
             steps {
+                // Déploiement en HTTPS via rsync/ssh classique (pas de clé Git SSH,
+                // juste l'accès shell au serveur de déploiement avec une credential SSH dédiée au déploiement)
                 sshagent(['deploy-server-key']) {
                     sh """
                         rsync -avz --exclude='.git' --exclude='node_modules' \
